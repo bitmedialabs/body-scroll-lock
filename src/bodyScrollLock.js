@@ -3,7 +3,6 @@
 // https://stackoverflow.com/questions/41594997/ios-10-safari-prevent-scrolling-behind-a-fixed-overlay-and-maintain-scroll-posi
 
 export interface BodyScrollOptions {
-  reserveScrollBarGap?: boolean;
   allowTouchMove?: (el: any) => boolean;
 }
 
@@ -36,9 +35,7 @@ type HandleScrollEvent = TouchEvent;
 let locks: Array<Lock> = [];
 let documentListenerAdded: boolean = false;
 let initialClientY: number = -1;
-let previousBodyOverflowSetting;
 let previousBodyPosition;
-let previousBodyPaddingRight;
 
 // returns true if `el` should be allowed to receive touchmove events.
 const allowTouchMove = (el: EventTarget): boolean =>
@@ -69,51 +66,14 @@ const preventDefault = (rawEvent: HandleScrollEvent): boolean => {
   return false;
 };
 
-const setOverflowHidden = (options?: BodyScrollOptions) => {
-  // If previousBodyPaddingRight is already set, don't set it again.
-  if (previousBodyPaddingRight === undefined) {
-    const reserveScrollBarGap = !!options && options.reserveScrollBarGap === true;
-    const scrollBarGap = window.innerWidth - document.documentElement.clientWidth;
-
-    if (reserveScrollBarGap && scrollBarGap > 0) {
-      const computedBodyPaddingRight = parseInt(window.getComputedStyle(document.body).getPropertyValue('padding-right'), 10);
-      previousBodyPaddingRight = document.body.style.paddingRight;
-      document.body.style.paddingRight = `${computedBodyPaddingRight + scrollBarGap}px`;
-    }
-  }
-
-  // If previousBodyOverflowSetting is already set, don't set it again.
-  if (previousBodyOverflowSetting === undefined) {
-    previousBodyOverflowSetting = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  }
-};
-
-const restoreOverflowSetting = () => {
-  if (previousBodyPaddingRight !== undefined) {
-    document.body.style.paddingRight = previousBodyPaddingRight;
-
-    // Restore previousBodyPaddingRight to undefined so setOverflowHidden knows it
-    // can be set again.
-    previousBodyPaddingRight = undefined;
-  }
-
-  if (previousBodyOverflowSetting !== undefined) {
-    document.body.style.overflow = previousBodyOverflowSetting;
-
-    // Restore previousBodyOverflowSetting to undefined
-    // so setOverflowHidden knows it can be set again.
-    previousBodyOverflowSetting = undefined;
-  }
-};
-
 const setPositionFixed = () => window.requestAnimationFrame(() => {
   // If previousBodyPosition is already set, don't set it again.
   if (previousBodyPosition === undefined) {
     previousBodyPosition = {
       position: document.body.style.position,
       top: document.body.style.top,
-      left: document.body.style.left
+      left: document.body.style.left,
+      right: document.body.style.right,
     };
 
     // Update the dom inside an animation frame
@@ -121,15 +81,18 @@ const setPositionFixed = () => window.requestAnimationFrame(() => {
     document.body.style.position = 'fixed';
     document.body.style.top = `${-scrollY}px`;
     document.body.style.left = `${-scrollX}px`;
+    document.body.style.right = 0;
 
-    setTimeout(() => window.requestAnimationFrame(() => {
-      // Attempt to check if the bottom bar appeared due to the position change
-      const bottomBarHeight = innerHeight - window.innerHeight;
-      if (bottomBarHeight && scrollY >= innerHeight) {
-        // Move the content further up so that the bottom bar doesn't hide it
-        document.body.style.top = -(scrollY + bottomBarHeight);
-      }
-    }), 300)
+    if (isIosDevice) {
+      setTimeout(() => window.requestAnimationFrame(() => {
+        // Attempt to check if the bottom bar appeared due to the position change
+        const bottomBarHeight = innerHeight - window.innerHeight;
+        if (bottomBarHeight && scrollY >= innerHeight) {
+          // Move the content further up so that the bottom bar doesn't hide it
+          document.body.style.top = -(scrollY + bottomBarHeight);
+        }
+      }), 300)
+    }
   }
 });
 
@@ -143,6 +106,7 @@ const restorePositionSetting = () => {
     document.body.style.position = previousBodyPosition.position;
     document.body.style.top = previousBodyPosition.top;
     document.body.style.left = previousBodyPosition.left;
+    document.body.style.right = previousBodyPosition.right;
 
     // Restore scroll
     window.scrollTo(x, y);
@@ -198,11 +162,7 @@ export const disableBodyScroll = (targetElement: any, options?: BodyScrollOption
 
   locks = [...locks, lock];
 
-  if (isIosDevice) {
-    setPositionFixed();
-  } else {
-    setOverflowHidden(options);
-  }
+  setPositionFixed();
 
   if (isIosDevice) {
     targetElement.ontouchstart = (event: HandleScrollEvent) => {
@@ -242,11 +202,7 @@ export const clearAllBodyScrollLocks = (): void => {
     initialClientY = -1;
   }
 
-  if (isIosDevice) {
-    restorePositionSetting();
-  } else {
-    restoreOverflowSetting();
-  }
+  restorePositionSetting();
 
   locks = [];
 };
@@ -272,9 +228,5 @@ export const enableBodyScroll = (targetElement: any): void => {
     }
   }
 
-  if (isIosDevice) {
-    restorePositionSetting();
-  } else {
-    restoreOverflowSetting();
-  }
+  restorePositionSetting();
 };
